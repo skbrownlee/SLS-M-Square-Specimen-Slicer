@@ -35,40 +35,40 @@ def generate_gcode(scan_speeds, line_spacings, filename):
         y_dir = move_y_component / move_length
         stitch_move_x = x_dir*stitch_length
         stitch_move_y = y_dir*stitch_length
-        # Go to start
+        # Scan to start
         laser_move_to(x=start_x, 
                       y=start_y, 
                       speed=1, 
                       start_dwell_ms=0, 
                       end_dwell_ms=1500, 
                       keep_laser_on=True)
-        # Go past start
+        # Scan past start
         laser_move_to(x=start_x + stitch_move_x, 
                       y=start_y + stitch_move_y, 
                       speed=1, start_dwell_ms=0, 
                       end_dwell_ms=0, 
                       keep_laser_on=True)
-        # Go to start
+        # Scan to start
         laser_move_to(x=start_x, 
                       y=start_y, 
                       speed=0.5, 
                       start_dwell_ms=0, 
                       end_dwell_ms=0, 
                       keep_laser_on=True)
-        # Go to end
+        # Scan to end
         laser_move_to(x=final_x, 
                       y=final_y, 
                       speed=speed, 
                       start_dwell_ms=0, 
                       end_dwell_ms=2000, 
                       keep_laser_on=True)
-        # Go to before end
+        # Scan to before end
         laser_move_to(x=final_x - 2*stitch_move_x, 
-                      y=final_y - stitch_move_y, 
+                      y=final_y - 2*stitch_move_y, 
                       speed=0.5, start_dwell_ms=0, 
                       end_dwell_ms=0, 
                       keep_laser_on=True)
-        # Go to end
+        # Scan to end
         laser_move_to(x=final_x - stitch_move_x, 
                       y=final_y, speed=0.5, 
                       start_dwell_ms=0, 
@@ -134,7 +134,7 @@ def generate_gcode(scan_speeds, line_spacings, filename):
         make_square(squares_max_x - square_size - square_spacing, 
                     squares_min_y + row*(square_size+square_spacing), 
                     square_size)
-        # Thirst Column of Row Outline
+        # Third Column of Row Outline
         make_square(squares_max_x - 2*square_size - 2*square_spacing, 
                     squares_min_y + row*(square_size+square_spacing), 
                     square_size)
