@@ -5,22 +5,29 @@ def generate_gcode(scan_speeds, line_spacings, filename):
     scan_time_sec = 0.0
     pass_counter = 1
 
+    # Squares parameters
+    square_size = 20
+    square_spacing = 5
+    squares_max_x = 100
+    squares_min_y = 260
+
     # Function to move to a point with laser off
     def move_to(x, y):
         gcode.append("M5 ; Laser Off")
         gcode.append(f"G0 X{x:.2f} Y{y:.2f} F3000")
 
     # Function to move to a point with laser on
-    def laser_move_to(x, y, speed):
+    def laser_move_to(x, y, speed, start_dwell_ms, end_dwell_ms, keep_laser_on:bool):
         gcode.append("M3 S255 ; Laser On")
-        gcode.append("G4 P200") #Wait 500 milliseconds for laser to turn on
+        if start_dwell_ms > 0:
+            gcode.append(f"G4 P{start_dwell_ms}")
         gcode.append(f"G1 X{x:.2f} Y{y:.2f} F{speed*60:.2f}")
-        gcode.append("G4 P200") #Wait 500 milliseconds for laser to turn off
-        gcode.append("M5 ; Laser Off")
-    
+        if end_dwell_ms > 0:
+            gcode.append(f"G4 P{end_dwell_ms}")
+        if not(keep_laser_on):
+            gcode.append("M5 ; Laser Off")
+             
     def laser_move_to_with_stitches(start_x, start_y, final_x, final_y, stitch_length, speed):
-        gcode.append("M3 S255 ; Laser On")
-        gcode.append("G4 P1000") #Wait 1000 milliseconds for laser to heat preheat start
         move_length = math.sqrt((final_x-start_x)**2+(final_y-start_y)**2)
         move_x_component = final_x - start_x
         move_y_component = final_y - start_y
@@ -28,17 +35,80 @@ def generate_gcode(scan_speeds, line_spacings, filename):
         y_dir = move_y_component / move_length
         stitch_move_x = x_dir*stitch_length
         stitch_move_y = y_dir*stitch_length
-        #Make Stitch
-        gcode.append(f"G1 X{start_x + stitch_move_x:.2f} Y{start_y + stitch_move_y:.2f} F{0.5*speed*60:.2f}")
-        gcode.append(f"G1 X{start_x:.2f} Y{start_y:.2f} F{0.5*speed*60:.2f}")
-        #Make Line
-        gcode.append(f"G1 X{final_x:.2f} Y{final_y:.2f} F{speed*60:.2f}")
-        gcode.append("G4 P1000") #Wait 1000 milliseconds
-        #Make Stitch
-        gcode.append(f"G1 X{final_x - stitch_move_x:.2f} Y{final_y - stitch_move_y:.2f} F{0.5*speed*60:.2f}")
-        gcode.append(f"G1 X{final_x:.2f} Y{final_y:.2f} F{0.5*speed*60:.2f}")
-        gcode.append("G4 P500") #Wait 500 milliseconds for laser to turn off
-        gcode.append("M5 ; Laser Off")
+        # Go to start
+        laser_move_to(x=start_x, 
+                      y=start_y, 
+                      speed=1, 
+                      start_dwell_ms=0, 
+                      end_dwell_ms=1500, 
+                      keep_laser_on=True)
+        # Go past start
+        laser_move_to(x=start_x + stitch_move_x, 
+                      y=start_y + stitch_move_y, 
+                      speed=1, start_dwell_ms=0, 
+                      end_dwell_ms=0, 
+                      keep_laser_on=True)
+        # Go to start
+        laser_move_to(x=start_x, 
+                      y=start_y, 
+                      speed=0.5, 
+                      start_dwell_ms=0, 
+                      end_dwell_ms=0, 
+                      keep_laser_on=True)
+        # Go to end
+        laser_move_to(x=final_x, 
+                      y=final_y, 
+                      speed=speed, 
+                      start_dwell_ms=0, 
+                      end_dwell_ms=2000, 
+                      keep_laser_on=True)
+        # Go to before end
+        laser_move_to(x=final_x - 2*stitch_move_x, 
+                      y=final_y - stitch_move_y, 
+                      speed=0.5, start_dwell_ms=0, 
+                      end_dwell_ms=0, 
+                      keep_laser_on=True)
+        # Go to end
+        laser_move_to(x=final_x - stitch_move_x, 
+                      y=final_y, speed=0.5, 
+                      start_dwell_ms=0, 
+                      end_dwell_ms=0, 
+                      keep_laser_on=False)
+
+    def make_square(start_x, start_y, square_size):
+        move_to(start_x, start_y)
+        x_speed = 3
+        y_speed = 0.5
+        connector_trace_x = -0.5
+        connector_trace_y = -0.5
+        laser_move_to(x=start_x - square_size, 
+                      y=start_y, speed=x_speed, 
+                      start_dwell_ms=1500, 
+                      end_dwell_ms=1500, 
+                      keep_laser_on=False)
+        laser_move_to(x=start_x - square_size, 
+                      y=start_y + square_size, 
+                      speed=y_speed, 
+                      start_dwell_ms=1500, 
+                      end_dwell_ms=1500, 
+                      keep_laser_on=False)
+        laser_move_to(x=start_x, 
+                      y=start_y + square_size, 
+                      speed=x_speed, 
+                      start_dwell_ms=1500, 
+                      end_dwell_ms=1500, 
+                      keep_laser_on=False)
+        laser_move_to(x=start_x, 
+                      y=start_y, 
+                      speed=y_speed, 
+                      start_dwell_ms=1500, 
+                      end_dwell_ms=0, 
+                      keep_laser_on=True)
+        laser_move_to_with_stitches(start_x=start_x, 
+                                    start_y=start_y, 
+                                    final_x=start_x + connector_trace_x, final_y=start_y + connector_trace_y,
+                                    stitch_length=1,
+                                    speed=y_speed)
 
     # Initialize the GCode
     gcode.append("G21 ; Set units to millimeters")
@@ -47,12 +117,7 @@ def generate_gcode(scan_speeds, line_spacings, filename):
     gcode.append("RECOATER_PUSH")
     gcode.append("RECOATER_PULL")
 
-    # Squares parameters
-    square_size = 20
-    square_spacing = 5
-    squares_max_x = 100
-    squares_min_y = 260
-    
+
 
     # Generate GCode for each row of squares
     for row in range(3):
@@ -60,34 +125,26 @@ def generate_gcode(scan_speeds, line_spacings, filename):
         current_line_spacing = line_spacings[row % len(line_spacings)]
         # Calculate the number of lines to scan within each square
         num_lines = int((square_size - (2*(0.7*current_line_spacing))) / current_line_spacing)
-        move_to(squares_max_x,squares_min_y+(row*25))
+
         # First Column of Row Outline
-        laser_move_to(squares_max_x - 20, squares_min_y + (row*25), 3)
-        laser_move_to(squares_max_x - 20, squares_min_y + (row*25) + 20, 0.5)
-        laser_move_to(squares_max_x, squares_min_y + (row*25) + 20, 3)
-        laser_move_to(squares_max_x, squares_min_y + (row*25), 0.5)
-        laser_move_to(squares_max_x, squares_min_y + (row*25) + 0.5*current_line_spacing, 0.5)
+        make_square(squares_max_x, 
+                    squares_min_y + row*(square_size+square_spacing), 
+                    square_size)
         # Second Column of Row Outline
-        move_to(squares_max_x - 25,squares_min_y+(row*25))
-        laser_move_to(squares_max_x - 20 - 25, squares_min_y + (row*25), 3)
-        laser_move_to(squares_max_x - 20 - 25, squares_min_y + (row*25) + 20, 0.5)
-        laser_move_to(squares_max_x - 25, squares_min_y + (row*25) + 20, 3)
-        laser_move_to(squares_max_x - 25, squares_min_y + (row*25), 0.5)
-        laser_move_to(squares_max_x - 25, squares_min_y + (row*25) + 0.5*current_line_spacing, 0.5)
+        make_square(squares_max_x - square_size - square_spacing, 
+                    squares_min_y + row*(square_size+square_spacing), 
+                    square_size)
         # Thirst Column of Row Outline
-        move_to(squares_max_x - 50,squares_min_y+(row*25))
-        laser_move_to(squares_max_x - 20 - 50, squares_min_y + (row*25), 3)
-        laser_move_to(squares_max_x - 20 - 50, squares_min_y + (row*25) + 20, 0.5)
-        laser_move_to(squares_max_x - 50, squares_min_y + (row*25) + 20, 3)
-        laser_move_to(squares_max_x - 50, squares_min_y + (row*25), 0.5)
-        laser_move_to(squares_max_x - 50, squares_min_y + (row*25) + 0.5*current_line_spacing, 0.5)
+        make_square(squares_max_x - 2*square_size - 2*square_spacing, 
+                    squares_min_y + row*(square_size+square_spacing), 
+                    square_size)
         for pass_counter in range(2):
             # For each line within the row
             speed_factor = 1.0 # Speed Factor for interlacing
-            if pass_counter == 0: # If on first pass move faster, establish structure without sucking powder out of interline
-                speed_factor = 1.2
+            if pass_counter == 1: # If on the second pass, move slower
+                speed_factor = 0.8
             for line_index in range(num_lines):
-                if (((pass_counter == 0) and (not(line_index % 2 == 0))) or ((pass_counter == 1) and (line_index % 2 == 0))):
+                if ((pass_counter == 0) and (not(line_index % 2 == 0))) or ((pass_counter == 1) and (line_index % 2 == 0)):
                     # Calculate Y position of the line
                     y_position = squares_min_y + line_index*current_line_spacing + (row)*(square_size + square_spacing) + current_line_spacing
                     # Move to Line Start
@@ -102,31 +159,15 @@ def generate_gcode(scan_speeds, line_spacings, filename):
                         # Get the scan speed for the current column
                         current_scan_speed = scan_speeds[col % len(scan_speeds)]
                         scan_time_sec = scan_time_sec + 20/(current_scan_speed*speed_factor)                
-                        laser_move_to_with_stitches(start_x, y_position, end_x, y_position, current_line_spacing ,current_scan_speed*speed_factor)
-        # Stitch Outline with Infill
-        # First Column of Row Outline
-        #move_to(squares_max_x - 20 + current_line_spacing/2, squares_min_y + (row*25))
-        #laser_move_to(squares_max_x - 20 + current_line_spacing/2, squares_min_y + (row*25) + 20 - current_line_spacing/2, 0.5)
-        #move_to(squares_max_x, squares_min_y + (row*25) + 20)
-        #laser_move_to(squares_max_x, squares_min_y + (row*25), 0.5)
-        # Second Column of Row Outline
-        #move_to(squares_max_x - 25,squares_min_y+(row*25))
-        #laser_move_to(squares_max_x - 20 - 25, squares_min_y + (row*25), 3)
-        #laser_move_to(squares_max_x - 20 - 25, squares_min_y + (row*25) + 20, 0.5)
-        #laser_move_to(squares_max_x - 25, squares_min_y + (row*25) + 20, 3)
-        #laser_move_to(squares_max_x - 25, squares_min_y + (row*25), 0.5)
-        # Thirst Column of Row Outline
-        #move_to(squares_max_x - 50,squares_min_y+(row*25))
-        #laser_move_to(squares_max_x - 20 - 50, squares_min_y + (row*25), 3)
-        #laser_move_to(squares_max_x - 20 - 50, squares_min_y + (row*25) + 20, 0.5)
-        #laser_move_to(squares_max_x - 50, squares_min_y + (row*25) + 20, 3)
-        #laser_move_to(squares_max_x - 50, squares_min_y + (row*25), 0.5)
-        
+                        laser_move_to_with_stitches(start_x=start_x,
+                                                    start_y=y_position,
+                                                    final_x=end_x - 0.5, final_y=y_position,
+                                                    stitch_length=current_line_spacing,
+                                                    speed=current_scan_speed*speed_factor)        
     # Finishing Statements
     gcode.append("G0 X0 Y330 Z5")
     gcode.append("G28 X0 Y0 Z0")
     gcode.append("RECOATER_PULL")
-
     # Write the GCode to a file
     with open(filename, 'w') as file:
         file.write("\n".join(gcode))
