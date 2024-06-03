@@ -177,34 +177,60 @@ def generate_gcode(scan_speeds, line_spacings, filename):
 
     scan_time_mins = scan_time_sec/60
     return scan_time_mins
+
 def generate_image_from_gcode(gcode_file, image_file):
-    coordinates = []
+    coordinates_g0 = []
+    coordinates_g1 = []
+    current_position = (0, 0)
+    
     with open(gcode_file, 'r') as f:
         for line in f:
-            if line.startswith('G1'):
+            if line.startswith('G0') or line.startswith('G1'):
                 parts = line.split()
-                x = None
-                y = None
+                x = current_position[0]
+                y = current_position[1]
                 for part in parts:
                     if part.startswith('X'):
                         x = float(part[1:])
                     elif part.startswith('Y'):
                         y = float(part[1:])
-                if x is not None and y is not None:
-                    coordinates.append((x, y))
+                if line.startswith('G0'):
+                    coordinates_g0.append((current_position, (x, y)))
+                elif line.startswith('G1'):
+                    coordinates_g1.append((current_position, (x, y)))
+                current_position = (x, y)
+
+    plt.figure(figsize=(10, 10))
     
-    if coordinates:
-        x_coords, y_coords = zip(*coordinates)
-        plt.figure(figsize=(10, 10))
-        plt.plot(x_coords, y_coords, marker='o')
-        plt.title('G-code Path in XY Plane')
-        plt.xlabel('X')
-        plt.ylabel('Y')
-        plt.grid(True)
-        # Invert the X-axis direction
-        plt.gca().set_xlim(plt.gca().get_xlim()[::-1])
-        plt.savefig(image_file)
-        plt.close()
+    labels_added = set()
+
+    # Plot G0 lines
+    for start, end in coordinates_g0:
+        label = 'G0' if 'G0' not in labels_added else ""
+        plt.plot([start[0], end[0]], [start[1], end[1]], 'b--', label=label)
+        labels_added.add('G0')
+
+    # Plot G1 lines
+    for start, end in coordinates_g1:
+        label = 'G1' if 'G1' not in labels_added else ""
+        plt.plot([start[0], end[0]], [start[1], end[1]], 'r-', label=label)
+        labels_added.add('G1')
+    
+    plt.title('G-code Path in XY Plane')
+    plt.xlabel('X (mm)')
+    plt.ylabel('Y (mm)')
+    plt.grid(True)
+    plt.gca().set_xlim(plt.gca().get_xlim()[::-1])
+    plt.xlim(110, 20)  # Set X-axis limits from 150 to 0
+    plt.ylim(250, 340)  # Set Y-axis limits from 150 to 300
+    
+    # Add legend only if labels are present
+    handles, labels = plt.gca().get_legend_handles_labels()
+    if labels:
+        plt.legend()
+    
+    plt.savefig(image_file)
+    plt.close()
 
 def main():
     # Prompt for scan speeds and line spacings
