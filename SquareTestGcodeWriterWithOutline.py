@@ -1,5 +1,7 @@
 import os
 import math
+import matplotlib.pyplot as plt
+
 def generate_gcode(scan_speeds, line_spacings, filename):
     gcode = []
     scan_time_sec = 0.0
@@ -55,17 +57,18 @@ def generate_gcode(scan_speeds, line_spacings, filename):
                       start_dwell_ms=0, 
                       end_dwell_ms=0, 
                       keep_laser_on=True)
-        # Scan to end
-        laser_move_to(x=final_x, 
+        # Scan to before end
+        laser_move_to(x=final_x-0.2, 
                       y=final_y, 
                       speed=speed, 
                       start_dwell_ms=0, 
-                      end_dwell_ms=2000, 
+                      end_dwell_ms=0, 
                       keep_laser_on=True)
-        # Scan to before end
-        laser_move_to(x=final_x - 2*stitch_move_x, 
-                      y=final_y - 2*stitch_move_y, 
-                      speed=0.5, start_dwell_ms=0, 
+        # Scan to end
+        laser_move_to(x=final_x, 
+                      y=final_y, 
+                      speed=0.5, 
+                      start_dwell_ms=0, 
                       end_dwell_ms=0, 
                       keep_laser_on=True)
         # Scan to end
@@ -174,6 +177,34 @@ def generate_gcode(scan_speeds, line_spacings, filename):
 
     scan_time_mins = scan_time_sec/60
     return scan_time_mins
+def generate_image_from_gcode(gcode_file, image_file):
+    coordinates = []
+    with open(gcode_file, 'r') as f:
+        for line in f:
+            if line.startswith('G1'):
+                parts = line.split()
+                x = None
+                y = None
+                for part in parts:
+                    if part.startswith('X'):
+                        x = float(part[1:])
+                    elif part.startswith('Y'):
+                        y = float(part[1:])
+                if x is not None and y is not None:
+                    coordinates.append((x, y))
+    
+    if coordinates:
+        x_coords, y_coords = zip(*coordinates)
+        plt.figure(figsize=(10, 10))
+        plt.plot(x_coords, y_coords, marker='o')
+        plt.title('G-code Path in XY Plane')
+        plt.xlabel('X')
+        plt.ylabel('Y')
+        plt.grid(True)
+        # Invert the X-axis direction
+        plt.gca().set_xlim(plt.gca().get_xlim()[::-1])
+        plt.savefig(image_file)
+        plt.close()
 
 def main():
     # Prompt for scan speeds and line spacings
@@ -202,15 +233,18 @@ def main():
     print(f"Total Scan Time: {scan_time_mins} mins")
 
     # Create the final filename including the total travel length
-    final_filename = f"squares_with_OL_speedsABC_{'_'.join(map(str, scan_speeds))}_spacings123_{'_'.join(map(str, line_spacings))}_time_mins_{scan_time_mins:.2f}.gcode"
-    final_filename = final_filename.replace('.', 'p')  # Replace all dots with 'p' to avoid issues in filenames
+    final_gcode_filename = f"squares_with_OL_speedsABC_{'_'.join(map(str, scan_speeds))}_spacings123_{'_'.join(map(str, line_spacings))}_time_mins_{scan_time_mins:.2f}.gcode"
+    final_gcode_filename = final_gcode_filename.replace('.', 'p')  # Replace all dots with 'p' to avoid issues in filenames
 
     # Convert the last 'p' back to a dot
-    final_filename = final_filename[::-1].replace('p', '.', 1)[::-1]
+    final_gcode_filename = final_gcode_filename[::-1].replace('p', '.', 1)[::-1]
 
     # Rename the temporary file to the final filename
-    os.rename(temp_filename, final_filename)
-    print(f"File renamed to {final_filename}")
+    os.rename(temp_filename, final_gcode_filename)
+    print(f"File renamed to {final_gcode_filename}")
+
+    image_file_name = final_gcode_filename.replace('.gcode', '.png')
+    generate_image_from_gcode(final_gcode_filename, image_file_name)
 
 if __name__ == "__main__":
     main()
