@@ -1,6 +1,8 @@
 import os
 import math
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import cv2
 
 def generate_gcode(scan_speeds, line_spacings, filename):
     gcode = []
@@ -58,7 +60,7 @@ def generate_gcode(scan_speeds, line_spacings, filename):
                       end_dwell_ms=0, 
                       keep_laser_on=True)
         # Scan to before end
-        laser_move_to(x=final_x-0.2, 
+        laser_move_to(x=final_x+1, 
                       y=final_y, 
                       speed=speed, 
                       start_dwell_ms=0, 
@@ -69,14 +71,8 @@ def generate_gcode(scan_speeds, line_spacings, filename):
                       y=final_y, 
                       speed=0.5, 
                       start_dwell_ms=0, 
-                      end_dwell_ms=0, 
+                      end_dwell_ms=500, 
                       keep_laser_on=True)
-        # Scan to end
-        laser_move_to(x=final_x - stitch_move_x, 
-                      y=final_y, speed=0.5, 
-                      start_dwell_ms=0, 
-                      end_dwell_ms=0, 
-                      keep_laser_on=False)
 
     def make_square(start_x, start_y, square_size):
         move_to(start_x, start_y)
@@ -164,7 +160,7 @@ def generate_gcode(scan_speeds, line_spacings, filename):
                         scan_time_sec = scan_time_sec + 20/(current_scan_speed*speed_factor)                
                         laser_move_to_with_stitches(start_x=start_x,
                                                     start_y=y_position,
-                                                    final_x=end_x - 0.5, final_y=y_position,
+                                                    final_x=end_x, final_y=y_position,
                                                     stitch_length=current_line_spacing,
                                                     speed=current_scan_speed*speed_factor)        
     # Finishing Statements
@@ -181,7 +177,9 @@ def generate_gcode(scan_speeds, line_spacings, filename):
 def generate_image_from_gcode(gcode_file, image_file):
     coordinates_g0 = []
     coordinates_g1 = []
+    feed_speeds = []
     current_position = (0, 0)
+    current_speed = None
     
     with open(gcode_file, 'r') as f:
         for line in f:
@@ -194,42 +192,59 @@ def generate_image_from_gcode(gcode_file, image_file):
                         x = float(part[1:])
                     elif part.startswith('Y'):
                         y = float(part[1:])
+                    elif part.startswith('F'):
+                        current_speed = float(part[1:])
                 if line.startswith('G0'):
                     coordinates_g0.append((current_position, (x, y)))
                 elif line.startswith('G1'):
-                    coordinates_g1.append((current_position, (x, y)))
+                    coordinates_g1.append((current_position, (x, y), current_speed))
+                    if current_speed is not None:
+                        feed_speeds.append(current_speed)
                 current_position = (x, y)
 
+    # Normalize feed speeds for color mapping
+    if feed_speeds:
+        norm = plt.Normalize(min(feed_speeds), max(feed_speeds))
+        cmap = plt.get_cmap('Reds_r')  # Reversed colormap
+    
     plt.figure(figsize=(10, 10))
     
     labels_added = set()
 
-    # Plot G0 lines
+    # Plot G0 lines in light gray dashes
     for start, end in coordinates_g0:
         label = 'G0' if 'G0' not in labels_added else ""
-        plt.plot([start[0], end[0]], [start[1], end[1]], 'b--', label=label)
+        plt.plot([start[0], end[0]], [start[1], end[1]], color='lightgray', linestyle='--', label=label)
         labels_added.add('G0')
 
-    # Plot G1 lines
-    for start, end in coordinates_g1:
+    # Plot G1 lines with color gradient based on feed speed
+    for start, end, speed in coordinates_g1:
+        color = cmap(norm(speed)) if speed is not None else 'red'
         label = 'G1' if 'G1' not in labels_added else ""
-        plt.plot([start[0], end[0]], [start[1], end[1]], 'r-', label=label)
+        plt.plot([start[0], end[0]], [start[1], end[1]], color=color, linestyle='-', label=label)
         labels_added.add('G1')
     
     plt.title('G-code Path in XY Plane')
-    plt.xlabel('X (mm)')
-    plt.ylabel('Y (mm)')
+    plt.xlabel('X')
+    plt.ylabel('Y')
     plt.grid(True)
-    plt.gca().set_xlim(plt.gca().get_xlim()[::-1])
     plt.xlim(110, 20)  # Set X-axis limits from 150 to 0
     plt.ylim(250, 340)  # Set Y-axis limits from 150 to 300
     
-    # Add legend only if labels are present
+    # Add color bar to indicate feed speeds
+    if feed_speeds:
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        cbar = plt.colorbar(sm, orientation='vertical', pad=0.1, fraction=0.046, aspect=30)
+        cbar.set_label('Feed Speed (F)')
+    
+    # Add legend only if labels are present, and place it outside the plot
     handles, labels = plt.gca().get_legend_handles_labels()
     if labels:
-        plt.legend()
-    
-    plt.savefig(image_file)
+        plt.legend(loc='upper left', bbox_to_anchor=(1.05, 1), borderaxespad=0.)
+
+    plt.tight_layout()
+    plt.savefig(image_file, bbox_inches='tight')
     plt.close()
 
 def main():
