@@ -174,41 +174,51 @@ def generate_gcode(scan_speeds, line_spacings, filename):
     scan_time_mins = scan_time_sec/60
     return scan_time_mins
 
-def generate_image_from_gcode(gcode_file, image_file):
+def generate_images_and_video(gcode_file, video_file):
     coordinates_g0 = []
     coordinates_g1 = []
     feed_speeds = []
     current_position = (0, 0)
     current_speed = None
     
+    frames_dir = "frames"
+    os.makedirs(frames_dir, exist_ok=True)
+    
     with open(gcode_file, 'r') as f:
-        for line in f:
-            if line.startswith('G0') or line.startswith('G1'):
-                parts = line.split()
-                x = current_position[0]
-                y = current_position[1]
-                for part in parts:
-                    if part.startswith('X'):
-                        x = float(part[1:])
-                    elif part.startswith('Y'):
-                        y = float(part[1:])
-                    elif part.startswith('F'):
-                        current_speed = float(part[1:])
-                if line.startswith('G0'):
-                    coordinates_g0.append((current_position, (x, y)))
-                elif line.startswith('G1'):
-                    coordinates_g1.append((current_position, (x, y), current_speed))
-                    if current_speed is not None:
-                        feed_speeds.append(current_speed)
-                current_position = (x, y)
+        lines = f.readlines()
+    
+    # Generate images for each G1 line
+    for i, line in enumerate(lines):
+        if line.startswith('G0') or line.startswith('G1'):
+            parts = line.split()
+            x = current_position[0]
+            y = current_position[1]
+            for part in parts:
+                if part.startswith('X'):
+                    x = float(part[1:])
+                elif part.startswith('Y'):
+                    y = float(part[1:])
+                elif part.startswith('F'):
+                    current_speed = float(part[1:])
+            if line.startswith('G0'):
+                coordinates_g0.append((current_position, (x, y)))
+            elif line.startswith('G1'):
+                coordinates_g1.append((current_position, (x, y), current_speed))
+                if current_speed is not None:
+                    feed_speeds.append(current_speed)
+                frame_file = os.path.join(frames_dir, f"frame_{i:04d}.png")
+                create_frame(coordinates_g0, coordinates_g1, feed_speeds, frame_file)
+            current_position = (x, y)
+    
+    # Compile images into video
+    compile_video(frames_dir, video_file)
 
-    # Normalize feed speeds for color mapping
+def create_frame(coordinates_g0, coordinates_g1, feed_speeds, frame_file):
     if feed_speeds:
         norm = plt.Normalize(min(feed_speeds), max(feed_speeds))
         cmap = plt.get_cmap('Reds_r')  # Reversed colormap
     
     plt.figure(figsize=(10, 10))
-    
     labels_added = set()
 
     # Plot G0 lines in light gray dashes
@@ -228,24 +238,30 @@ def generate_image_from_gcode(gcode_file, image_file):
     plt.xlabel('X')
     plt.ylabel('Y')
     plt.grid(True)
-    plt.xlim(110, 20)  # Set X-axis limits from 150 to 0
-    plt.ylim(250, 340)  # Set Y-axis limits from 150 to 300
+    plt.xlim(150, 0)  # Set X-axis limits from 150 to 0
+    plt.ylim(150, 300)  # Set Y-axis limits from 150 to 300
     
-    # Add color bar to indicate feed speeds
-    if feed_speeds:
-        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-        sm.set_array([])
-        cbar = plt.colorbar(sm, orientation='vertical', pad=0.1, fraction=0.046, aspect=30)
-        cbar.set_label('Feed Speed (F)')
-    
-    # Add legend only if labels are present, and place it outside the plot
     handles, labels = plt.gca().get_legend_handles_labels()
     if labels:
         plt.legend(loc='upper left', bbox_to_anchor=(1.05, 1), borderaxespad=0.)
 
     plt.tight_layout()
-    plt.savefig(image_file, bbox_inches='tight')
+    plt.savefig(frame_file, bbox_inches='tight')
     plt.close()
+
+def compile_video(frames_dir, video_file):
+    images = [img for img in os.listdir(frames_dir) if img.endswith(".png")]
+    images.sort()
+    
+    frame = cv2.imread(os.path.join(frames_dir, images[0]))
+    height, width, layers = frame.shape
+    
+    video = cv2.VideoWriter(video_file, cv2.VideoWriter_fourcc(*'mp4v'), 10, (width, height))
+    
+    for image in images:
+        video.write(cv2.imread(os.path.join(frames_dir, image)))
+    
+    video.release()
 
 def main():
     # Prompt for scan speeds and line spacings
@@ -284,8 +300,9 @@ def main():
     os.rename(temp_filename, final_gcode_filename)
     print(f"File renamed to {final_gcode_filename}")
 
-    image_file_name = final_gcode_filename.replace('.gcode', '.png')
-    generate_image_from_gcode(final_gcode_filename, image_file_name)
+
+    video_file_name = final_gcode_filename.replace('.gcode', '.png')
+    generate_images_and_video(final_gcode_filename, video_file_name)
 
 if __name__ == "__main__":
     main()
